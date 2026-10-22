@@ -1,0 +1,33 @@
+{
+    "resources": {
+        "cycle": 0,
+        "food": 80,
+        "water": 75,
+        "power": 98,
+        "scrap": 29
+    },
+    "expedition": {
+        "status": "idle",
+        "location": null,
+        "cycle_remaining": 0
+    },
+    "engineering": {
+        "status": "available",
+        "cycle_remaining": 0,
+        "repair_target": 0
+    },
+    "infrastructure": {
+        "farm": {
+            "status": "online",
+            "lights": "online"
+        },
+        "water_system": {
+            "source": "available",
+            "pump": "online"
+        },
+        "power_system": {
+            "wind_generators": "online",
+            "output": 98
+        }
+    }
+}
