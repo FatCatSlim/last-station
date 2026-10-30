@@ -141,6 +141,7 @@ def print_simulation_status(
         menu_line2 = f"{'[E] Expedition':<25}  [R] Engineering / Repair"
         menu_line3 = f"{'[M] Sector Map':<25}  [L] Recent Cycle Log"
         menu_line4 = f"{'[A] Ask Adviser':<25}  [Q] Quit"
+        menu_line5 = f"{'[T] Toggle Auto Mode':<25}"
 
         print("╔" + "═" * 68 + "╗")
         print("║" + f"{title.center(68)}" + "║")
@@ -178,6 +179,7 @@ def print_simulation_status(
             print("║" + f" {menu_line2.ljust(67)}" + "║")
             print("║" + f" {menu_line3.ljust(67)}" + "║")
             print("║" + f" {menu_line4.ljust(67)}" + "║")
+            print("║" + f" {menu_line5.ljust(67)}" + "║")
             print("║" + " " * 68 + "║")
             print("╚" + "═" * 68 + "╝")
 
@@ -256,6 +258,7 @@ def run_simulation():  # simulation start
             resources = cached_resources
 
     # MAIN BLOCK
+    auto_mode = False
     if hub_status["status"] == "online":
         while True:
             clear_screen()
@@ -264,8 +267,13 @@ def run_simulation():  # simulation start
                 hub_status, station_mode, hub_info, resources, infrastructure
             )
             choice = input("Select an option: ").strip().lower()
+            if auto_mode and choice in ("1", "2"):
+                print("Manual mode is disabled while Auto Mode is active.")
+                input("\nPress Enter to return...")
+                continue
             full_cycle_data = None
             cycle_selection = None
+
             if choice == "1":
                 cycle_selection = "normal"
             elif choice == "2":
@@ -527,7 +535,11 @@ def run_simulation():  # simulation start
 
                     input("\nPress Enter to return...")
                 continue
-
+            elif choice == "t":
+                auto_mode = not auto_mode
+                print(f"Auto Mode {'Enabled' if auto_mode else 'Disabled'}")
+                input("\nPress Enter to return...")
+                continue
             elif choice == "q":
                 print("Session ended.")
                 break
