@@ -265,10 +265,11 @@ def run_simulation():  # simulation start
             )
             choice = input("Select an option: ").strip().lower()
             full_cycle_data = None
+            cycle_selection = None
             if choice == "1":
-                full_cycle_data = advance_cycle("normal")
+                cycle_selection = "normal"
             elif choice == "2":
-                full_cycle_data = advance_cycle("ration")
+                cycle_selection = "ration"
             elif choice == "e":
                 clear_screen()
                 expedition_data = get_expedition()
@@ -534,6 +535,9 @@ def run_simulation():  # simulation start
                 print("Invalid option. Please try again.")
                 input("\nPress Enter to return...")
                 continue
+
+            if cycle_selection is not None:
+                full_cycle_data = advance_cycle(cycle_selection)
 
             if full_cycle_data:
                 resources = full_cycle_data["resources"]
