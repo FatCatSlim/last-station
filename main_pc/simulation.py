@@ -85,6 +85,9 @@ def print_simulation_status(
     resources,
     infrastructure,
     show_operator=True,
+    show_operator_interface=True,
+    auto_mode=False,
+    auto_cycle_mode=None,
 ):
     if hub_status["status"] == "online":
         warnings = get_resource_warning(resources)
@@ -142,6 +145,11 @@ def print_simulation_status(
         menu_line3 = f"{'[M] Sector Map':<25}  [L] Recent Cycle Log"
         menu_line4 = f"{'[A] Ask Adviser':<25}  [Q] Quit"
         menu_line5 = f"{'[T] Toggle Auto Mode':<25}"
+        if auto_mode:
+            cycle_type = auto_cycle_mode.upper() if auto_cycle_mode else "N/A"
+            auto_mode_line = f"Auto Mode: ON | Type: {cycle_type}"
+        else:
+            auto_mode_line = f"Auto Mode: OFF | Manual Control"
 
         print("╔" + "═" * 68 + "╗")
         print("║" + f"{title.center(68)}" + "║")
@@ -174,6 +182,8 @@ def print_simulation_status(
         print("║" + " " * 68 + "║")
         if show_operator:
             print("╠" + operator_title.center(68, "═") + "╣")
+            print("║" + " " * 68 + "║")
+            print("║" + f" {auto_mode_line.center(67)}" + "║")
             print("║" + " " * 68 + "║")
             print("║" + f" {menu_line1.ljust(67)}" + "║")
             print("║" + f" {menu_line2.ljust(67)}" + "║")
@@ -259,12 +269,21 @@ def run_simulation():  # simulation start
 
     # MAIN BLOCK
     auto_mode = False
+    auto_cycle_mode = None
+    show_operator_interface = True
     if hub_status["status"] == "online":
         while True:
             clear_screen()
             infrastructure = get_infrastructure()
             print_simulation_status(
-                hub_status, station_mode, hub_info, resources, infrastructure
+                hub_status,
+                station_mode,
+                hub_info,
+                resources,
+                infrastructure,
+                show_operator_interface=show_operator_interface,
+                auto_mode=auto_mode,
+                auto_cycle_mode=auto_cycle_mode,
             )
             choice = input("Select an option: ").strip().lower()
             if auto_mode and choice in ("1", "2"):
@@ -513,6 +532,9 @@ def run_simulation():  # simulation start
                     resources,
                     infrastructure,
                     show_operator=False,
+                    show_operator_interface=show_operator_interface,
+                    auto_mode=auto_mode,
+                    auto_cycle_mode=auto_cycle_mode,
                 )
                 adviser_input = build_adviser_input()
                 if adviser_input is None:
@@ -536,9 +558,44 @@ def run_simulation():  # simulation start
                     input("\nPress Enter to return...")
                 continue
             elif choice == "t":
-                auto_mode = not auto_mode
-                print(f"Auto Mode {'Enabled' if auto_mode else 'Disabled'}")
-                input("\nPress Enter to return...")
+                if auto_mode:
+                    auto_mode = False
+                    auto_cycle_mode = None
+                else:
+                    while True:
+                        selection = (
+                            input(
+                                "Select auto cycle mode (1: Normal / 2: Ration / B: Back): "
+                            )
+                            .strip()
+                            .lower()
+                        )
+                        if selection == "1":
+                            auto_cycle_mode = "normal"
+                            auto_mode = True
+                            break
+                        elif selection == "2":
+                            auto_cycle_mode = "ration"
+                            auto_mode = True
+                            break
+                        elif selection == "b":
+                            auto_mode = False
+                            auto_cycle_mode = None
+                            break
+                        else:
+                            clear_screen()
+                            print_simulation_status(
+                                hub_status,
+                                station_mode,
+                                hub_info,
+                                resources,
+                                infrastructure,
+                                show_operator_interface=show_operator_interface,
+                                auto_mode=auto_mode,
+                                auto_cycle_mode=auto_cycle_mode,
+                            )
+
+                            print("Invalid selection. Please try again.")
                 continue
             elif choice == "q":
                 print("Session ended.")
@@ -630,13 +687,23 @@ def run_simulation():  # simulation start
                     hub_info,
                     resources,
                     infrastructure,
+                    show_operator_interface=show_operator_interface,
+                    auto_mode=auto_mode,
+                    auto_cycle_mode=auto_cycle_mode,
                 )
                 break
     else:
         # If the hub is offline
         clear_screen()
         print_simulation_status(
-            hub_status, station_mode, hub_info, resources, infrastructure=None
+            hub_status,
+            station_mode,
+            hub_info,
+            resources,
+            infrastructure=None,
+            show_operator_interface=show_operator_interface,
+            auto_mode=auto_mode,
+            auto_cycle_mode=auto_cycle_mode,
         )
         input("\nPress Enter to return...")
 
