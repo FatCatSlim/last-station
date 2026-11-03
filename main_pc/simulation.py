@@ -1,4 +1,11 @@
+import time
 import os
+
+if os.name == "nt":
+    import msvcrt  # Windows module for keyboard input detection
+else:
+    msvcrt = None
+
 import subprocess  # Run external commands, e.g., clearing the screen
 import textwrap  # Format text output, e.g., wrapping long messages
 
@@ -22,11 +29,14 @@ from tools import (
     request_generator_repair,
 )
 
-# Power Thresholds
-MAINTENANCE_POWER_THRESHOLD = 60  # level at which maintenance is required
-DEGRADED_POWER_THRESHOLD = 50  # level at which power is considered degraded
-CRITICAL_POWER_THRESHOLD = 20  # level at which power is critical
-STANDBY_POWER_THRESHOLD = 10  # level at which standby mode is activated
+# Seconds interval between automatic cycles
+AUTO_CYCLE_INTERVAL = 20  # seconds between cycles
+
+# Power thresholds warning levels
+MAINTENANCE_POWER_THRESHOLD = 60  # maintenance is required
+DEGRADED_POWER_THRESHOLD = 50  # -20% production at this point
+CRITICAL_POWER_THRESHOLD = 20  #  power is critical
+STANDBY_POWER_THRESHOLD = 10  # standby mode is activated
 
 
 def get_station_mode(hub_status):
@@ -85,6 +95,9 @@ def print_simulation_status(
     resources,
     infrastructure,
     show_operator=True,
+    show_operator_interface=True,
+    auto_mode=False,
+    auto_cycle_mode=None,
 ):
     if hub_status["status"] == "online":
         warnings = get_resource_warning(resources)
@@ -141,6 +154,12 @@ def print_simulation_status(
         menu_line2 = f"{'[E] Expedition':<25}  [R] Engineering / Repair"
         menu_line3 = f"{'[M] Sector Map':<25}  [L] Recent Cycle Log"
         menu_line4 = f"{'[A] Ask Adviser':<25}  [Q] Quit"
+        menu_line5 = f"{'[T] Toggle Auto Mode':<25}"
+        if auto_mode:
+            cycle_type = auto_cycle_mode.upper() if auto_cycle_mode else "N/A"
+            auto_mode_line = f"Auto Mode: ON | Type: {cycle_type}"
+        else:
+            auto_mode_line = f"Auto Mode: OFF | Manual Control"
 
         print("╔" + "═" * 68 + "╗")
         print("║" + f"{title.center(68)}" + "║")
@@ -174,11 +193,20 @@ def print_simulation_status(
         if show_operator:
             print("╠" + operator_title.center(68, "═") + "╣")
             print("║" + " " * 68 + "║")
-            print("║" + f" {menu_line1.ljust(67)}" + "║")
-            print("║" + f" {menu_line2.ljust(67)}" + "║")
-            print("║" + f" {menu_line3.ljust(67)}" + "║")
-            print("║" + f" {menu_line4.ljust(67)}" + "║")
+            print("║" + f" {auto_mode_line.center(67)}" + "║")
             print("║" + " " * 68 + "║")
+            if auto_mode:
+                print("║" + f" {'[T] Disable Auto Mode'.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
+                print("║" + f" {'Menu Locked in Auto Mode'.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
+            else:
+                print("║" + f" {menu_line1.ljust(67)}" + "║")
+                print("║" + f" {menu_line2.ljust(67)}" + "║")
+                print("║" + f" {menu_line3.ljust(67)}" + "║")
+                print("║" + f" {menu_line4.ljust(67)}" + "║")
+                print("║" + f" {menu_line5.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
             print("╚" + "═" * 68 + "╝")
 
     else:  # IF hub is offline
@@ -256,19 +284,60 @@ def run_simulation():  # simulation start
             resources = cached_resources
 
     # MAIN BLOCK
+    auto_mode = False  # auto on/off
+    auto_cycle_mode = None  # normal or ration
+    show_operator_interface = True  # show/hide operator interface
+    next_auto_cycle = None  # timestamp for next auto cycle
+    cycle_in_progress = False  # flag to indicate if a cycle is in progress
+
     if hub_status["status"] == "online":
         while True:
             clear_screen()
             infrastructure = get_infrastructure()
             print_simulation_status(
-                hub_status, station_mode, hub_info, resources, infrastructure
+                hub_status,
+                station_mode,
+                hub_info,
+                resources,
+                infrastructure,
+                show_operator_interface=show_operator_interface,
+                auto_mode=auto_mode,
+                auto_cycle_mode=auto_cycle_mode,
             )
-            choice = input("Select an option: ").strip().lower()
+
+            # Get user choice based on mode (auto or manual)
+            if auto_mode:
+                choice = None
+                while choice is None:
+                    if msvcrt.kbhit():  # Check whether a key was pressed
+                        key = msvcrt.getwch().lower()
+                        if key == "t":
+                            choice = "t"
+                    # Check the timer independently of keyboard input.
+                    if (
+                        choice is None
+                        and next_auto_cycle is not None
+                        and time.monotonic() >= next_auto_cycle
+                    ):
+                        choice = "__auto_cycle__"
+                    time.sleep(0.1)  # Small delay to prevent high CPU usage
+            else:
+                choice = input("Select an option: ").strip().lower()
+
+            if auto_mode and choice in ("1", "2"):
+                print("Manual mode is disabled while Auto Mode is active.")
+                input("\nPress Enter to return...")
+                continue
+
             full_cycle_data = None
+            cycle_selection = None
+
             if choice == "1":
-                full_cycle_data = advance_cycle("normal")
+                cycle_selection = "normal"
             elif choice == "2":
-                full_cycle_data = advance_cycle("ration")
+                cycle_selection = "ration"
+            elif choice == "__auto_cycle__" and auto_mode:
+                cycle_selection = auto_cycle_mode
             elif choice == "e":
                 clear_screen()
                 expedition_data = get_expedition()
@@ -504,6 +573,9 @@ def run_simulation():  # simulation start
                     resources,
                     infrastructure,
                     show_operator=False,
+                    show_operator_interface=show_operator_interface,
+                    auto_mode=auto_mode,
+                    auto_cycle_mode=auto_cycle_mode,
                 )
                 adviser_input = build_adviser_input()
                 if adviser_input is None:
@@ -526,7 +598,57 @@ def run_simulation():  # simulation start
 
                     input("\nPress Enter to return...")
                 continue
+            elif choice == "t":
 
+                # msvcrt check for windows
+                if msvcrt is None:
+                    print("Currently, Auto mode is only available on Windows.")
+                    input("\nPress Enter to return...")
+                    continue
+
+                if auto_mode:
+                    auto_mode = False
+                    auto_cycle_mode = None
+                else:
+                    while True:
+                        selection = (
+                            input(
+                                "Select auto cycle mode (1: Normal / 2: Ration / B: Back): "
+                            )
+                            .strip()
+                            .lower()
+                        )
+                        if selection == "1":
+                            auto_cycle_mode = "normal"
+                            auto_mode = True
+                            break
+                        elif selection == "2":
+                            auto_cycle_mode = "ration"
+                            auto_mode = True
+                            break
+                        elif selection == "b":
+                            auto_mode = False
+                            auto_cycle_mode = None
+                            break
+                        else:
+                            clear_screen()
+                            print_simulation_status(
+                                hub_status,
+                                station_mode,
+                                hub_info,
+                                resources,
+                                infrastructure,
+                                show_operator_interface=show_operator_interface,
+                                auto_mode=auto_mode,
+                                auto_cycle_mode=auto_cycle_mode,
+                            )
+
+                            print("Invalid selection. Please try again.")
+                if auto_mode:
+                    next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
+                else:
+                    next_auto_cycle = None
+                continue
             elif choice == "q":
                 print("Session ended.")
                 break
@@ -534,6 +656,13 @@ def run_simulation():  # simulation start
                 print("Invalid option. Please try again.")
                 input("\nPress Enter to return...")
                 continue
+
+            if cycle_selection is not None and not cycle_in_progress:
+                cycle_in_progress = True
+                try:
+                    full_cycle_data = advance_cycle(cycle_selection)
+                finally:
+                    cycle_in_progress = False
 
             if full_cycle_data:
                 resources = full_cycle_data["resources"]
@@ -601,9 +730,12 @@ def run_simulation():  # simulation start
 
                 save_resources(resources)
                 add_cycle_report(full_cycle_data)
+                if choice == "__auto_cycle__":
+                    next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
 
                 print("\nCycle advanced.")
-                input("\nPress Enter to return...")
+                if choice != "__auto_cycle__":
+                    input("\nPress Enter to return...")
             else:
                 print("Hub connection lost. Cycle not advanced.")
                 hub_status["status"] = "offline"
@@ -614,13 +746,23 @@ def run_simulation():  # simulation start
                     hub_info,
                     resources,
                     infrastructure,
+                    show_operator_interface=show_operator_interface,
+                    auto_mode=auto_mode,
+                    auto_cycle_mode=auto_cycle_mode,
                 )
                 break
     else:
         # If the hub is offline
         clear_screen()
         print_simulation_status(
-            hub_status, station_mode, hub_info, resources, infrastructure=None
+            hub_status,
+            station_mode,
+            hub_info,
+            resources,
+            infrastructure=None,
+            show_operator_interface=show_operator_interface,
+            auto_mode=auto_mode,
+            auto_cycle_mode=auto_cycle_mode,
         )
         input("\nPress Enter to return...")
 
