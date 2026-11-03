@@ -5,6 +5,7 @@ if os.name == "nt":
     import msvcrt  # Windows module for keyboard input detection
 else:
     msvcrt = None
+
 import subprocess  # Run external commands, e.g., clearing the screen
 import textwrap  # Format text output, e.g., wrapping long messages
 
@@ -194,12 +195,18 @@ def print_simulation_status(
             print("║" + " " * 68 + "║")
             print("║" + f" {auto_mode_line.center(67)}" + "║")
             print("║" + " " * 68 + "║")
-            print("║" + f" {menu_line1.ljust(67)}" + "║")
-            print("║" + f" {menu_line2.ljust(67)}" + "║")
-            print("║" + f" {menu_line3.ljust(67)}" + "║")
-            print("║" + f" {menu_line4.ljust(67)}" + "║")
-            print("║" + f" {menu_line5.ljust(67)}" + "║")
-            print("║" + " " * 68 + "║")
+            if auto_mode:
+                print("║" + f" {'[T] Disable Auto Mode'.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
+                print("║" + f" {'Menu Locked in Auto Mode'.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
+            else:
+                print("║" + f" {menu_line1.ljust(67)}" + "║")
+                print("║" + f" {menu_line2.ljust(67)}" + "║")
+                print("║" + f" {menu_line3.ljust(67)}" + "║")
+                print("║" + f" {menu_line4.ljust(67)}" + "║")
+                print("║" + f" {menu_line5.ljust(67)}" + "║")
+                print("║" + " " * 68 + "║")
             print("╚" + "═" * 68 + "╝")
 
     else:  # IF hub is offline
