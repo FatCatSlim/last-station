@@ -1,6 +1,10 @@
 import time
 import os
-import msvcrt  # Windows module for keyboard input detection
+
+if os.name == "nt":
+    import msvcrt  # Windows module for keyboard input detection
+else:
+    msvcrt = None
 import subprocess  # Run external commands, e.g., clearing the screen
 import textwrap  # Format text output, e.g., wrapping long messages
 
@@ -588,6 +592,13 @@ def run_simulation():  # simulation start
                     input("\nPress Enter to return...")
                 continue
             elif choice == "t":
+
+                # msvcrt check for windows
+                if msvcrt is None:
+                    print("Currently, Auto mode is only available on Windows.")
+                    input("\nPress Enter to return...")
+                    continue
+
                 if auto_mode:
                     auto_mode = False
                     auto_cycle_mode = None
