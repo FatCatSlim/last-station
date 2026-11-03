@@ -1,4 +1,6 @@
+import time
 import os
+import msvcrt  # Windows module for keyboard input detection
 import subprocess  # Run external commands, e.g., clearing the screen
 import textwrap  # Format text output, e.g., wrapping long messages
 
@@ -22,11 +24,14 @@ from tools import (
     request_generator_repair,
 )
 
-# Power Thresholds
-MAINTENANCE_POWER_THRESHOLD = 60  # level at which maintenance is required
-DEGRADED_POWER_THRESHOLD = 50  # level at which power is considered degraded
-CRITICAL_POWER_THRESHOLD = 20  # level at which power is critical
-STANDBY_POWER_THRESHOLD = 10  # level at which standby mode is activated
+# Seconds interval between automatic cycles
+AUTO_CYCLE_INTERVAL = 20  # seconds between cycles
+
+# Power thresholds warning levels
+MAINTENANCE_POWER_THRESHOLD = 60  # maintenance is required
+DEGRADED_POWER_THRESHOLD = 50  # -20% production at this point
+CRITICAL_POWER_THRESHOLD = 20  #  power is critical
+STANDBY_POWER_THRESHOLD = 10  # standby mode is activated
 
 
 def get_station_mode(hub_status):
@@ -268,9 +273,12 @@ def run_simulation():  # simulation start
             resources = cached_resources
 
     # MAIN BLOCK
-    auto_mode = False
-    auto_cycle_mode = None
-    show_operator_interface = True
+    auto_mode = False  # auto on/off
+    auto_cycle_mode = None  # normal or ration
+    show_operator_interface = True  # show/hide operator interface
+    next_auto_cycle = None  # timestamp for next auto cycle
+    cycle_in_progress = False  # flag to indicate if a cycle is in progress
+
     if hub_status["status"] == "online":
         while True:
             clear_screen()
@@ -285,11 +293,31 @@ def run_simulation():  # simulation start
                 auto_mode=auto_mode,
                 auto_cycle_mode=auto_cycle_mode,
             )
-            choice = input("Select an option: ").strip().lower()
+
+            # Get user choice based on mode (auto or manual)
+            if auto_mode:
+                choice = None
+                while choice is None:
+                    if msvcrt.kbhit():  # Check whether a key was pressed
+                        key = msvcrt.getwch().lower()
+                        if key == "t":
+                            choice = "t"
+                    # Check the timer independently of keyboard input.
+                    if (
+                        choice is None
+                        and next_auto_cycle is not None
+                        and time.monotonic() >= next_auto_cycle
+                    ):
+                        choice = "__auto_cycle__"
+                    time.sleep(0.1)  # Small delay to prevent high CPU usage
+            else:
+                choice = input("Select an option: ").strip().lower()
+
             if auto_mode and choice in ("1", "2"):
                 print("Manual mode is disabled while Auto Mode is active.")
                 input("\nPress Enter to return...")
                 continue
+
             full_cycle_data = None
             cycle_selection = None
 
@@ -297,6 +325,8 @@ def run_simulation():  # simulation start
                 cycle_selection = "normal"
             elif choice == "2":
                 cycle_selection = "ration"
+            elif choice == "__auto_cycle__" and auto_mode:
+                cycle_selection = auto_cycle_mode
             elif choice == "e":
                 clear_screen()
                 expedition_data = get_expedition()
@@ -596,6 +626,10 @@ def run_simulation():  # simulation start
                             )
 
                             print("Invalid selection. Please try again.")
+                if auto_mode:
+                    next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
+                else:
+                    next_auto_cycle = None
                 continue
             elif choice == "q":
                 print("Session ended.")
@@ -605,8 +639,12 @@ def run_simulation():  # simulation start
                 input("\nPress Enter to return...")
                 continue
 
-            if cycle_selection is not None:
-                full_cycle_data = advance_cycle(cycle_selection)
+            if cycle_selection is not None and not cycle_in_progress:
+                cycle_in_progress = True
+                try:
+                    full_cycle_data = advance_cycle(cycle_selection)
+                finally:
+                    cycle_in_progress = False
 
             if full_cycle_data:
                 resources = full_cycle_data["resources"]
@@ -674,9 +712,12 @@ def run_simulation():  # simulation start
 
                 save_resources(resources)
                 add_cycle_report(full_cycle_data)
+                if choice == "__auto_cycle__":
+                    next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
 
                 print("\nCycle advanced.")
-                input("\nPress Enter to return...")
+                if choice != "__auto_cycle__":
+                    input("\nPress Enter to return...")
             else:
                 print("Hub connection lost. Cycle not advanced.")
                 hub_status["status"] = "offline"
