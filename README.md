@@ -14,16 +14,16 @@ interprets the information it receives and gives suggestions.
 
 ## Project Status
 
-Last Station is currently at its first working version.
+Version 1 is complete. It includes the main simulation, terminal interface,
+API, and local AI adviser.
 
-Version 1 sets up the main structure of the project: the simulation, terminal
-interface, API, local AI adviser, and client/server communication.
+Phase 2 is currently in development.
 
-For now, the focus is on keeping the core systems simple and reliable. Python
-handles the simulation logic, while the local LLM is used only as an adviser.
+Phase 2.1 added automatic NORMAL or RATION cycles, with an ON/OFF option.
+When AUTO mode is active, the operator menu shows only the option to disable it.
+Manual controls become available again when AUTO is turned off.
 
-This version is the starting point for expanding Last Station into a larger
-systems and infrastructure project over time.
+More improvements are planned as Phase 2 continues.
 
 ## Project Background
 
@@ -59,6 +59,16 @@ project as it grows.
 - Local AI adviser powered by Ollama
 - Python handles the facts; the LLM interprets them and gives advice
 - Static sector map for the RAVEN LINE
+
+## Phase 2.1 — Automatic Cycles
+
+Phase 2.1 introduced automatic NORMAL or RATION cycles with an ON/OFF option.
+
+- Cycles advance automatically using a fixed timer.
+- The operator selects NORMAL or RATION when enabling AUTO.
+- While AUTO is running, the operator menu only allows disabling AUTO.
+- Manual controls return when AUTO is turned off.
+- Automatic cycles use the existing simulation logic.
 
 ## Architecture
 
@@ -280,6 +290,7 @@ changes to take effect.
 [M] Sector Map             - View the current RAVEN LINE sector map
 [L] Recent Cycle Log       - View the most recent cycle reports
 [A] Ask Adviser            - Get advice from the local AI adviser
+[T] Toggle Auto Mode       - Enable or disable automatic NORMAL/RATION cycles
 [Q] Quit                   - Exit RAVEN-01
 ```
 
@@ -374,7 +385,6 @@ Files and folders created automatically by Python, such as `.venv/`,
 
 Future development may include:
 
-- Automated simulation cycles
 - Running RAVEN-HUB and RAVEN-01 on separate computers over a local network
 - More realistic network, service, and system events
 - Additional infrastructure and repair systems
