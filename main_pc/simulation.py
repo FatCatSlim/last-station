@@ -95,7 +95,6 @@ def print_simulation_status(
     resources,
     infrastructure,
     show_operator=True,
-    show_operator_interface=True,
     auto_mode=False,
     auto_cycle_mode=None,
 ):
@@ -286,9 +285,7 @@ def run_simulation():  # simulation start
     # MAIN BLOCK
     auto_mode = False  # auto on/off
     auto_cycle_mode = None  # normal or ration
-    show_operator_interface = True  # show/hide operator interface
     next_auto_cycle = None  # timestamp for next auto cycle
-    cycle_in_progress = False  # flag to indicate if a cycle is in progress
 
     if hub_status["status"] == "online":
         while True:
@@ -300,7 +297,6 @@ def run_simulation():  # simulation start
                 hub_info,
                 resources,
                 infrastructure,
-                show_operator_interface=show_operator_interface,
                 auto_mode=auto_mode,
                 auto_cycle_mode=auto_cycle_mode,
             )
@@ -323,11 +319,6 @@ def run_simulation():  # simulation start
                     time.sleep(0.1)  # Small delay to prevent high CPU usage
             else:
                 choice = input("Select an option: ").strip().lower()
-
-            if auto_mode and choice in ("1", "2"):
-                print("Manual mode is disabled while Auto Mode is active.")
-                input("\nPress Enter to return...")
-                continue
 
             full_cycle_data = None
             cycle_selection = None
@@ -573,7 +564,6 @@ def run_simulation():  # simulation start
                     resources,
                     infrastructure,
                     show_operator=False,
-                    show_operator_interface=show_operator_interface,
                     auto_mode=auto_mode,
                     auto_cycle_mode=auto_cycle_mode,
                 )
@@ -638,7 +628,6 @@ def run_simulation():  # simulation start
                                 hub_info,
                                 resources,
                                 infrastructure,
-                                show_operator_interface=show_operator_interface,
                                 auto_mode=auto_mode,
                                 auto_cycle_mode=auto_cycle_mode,
                             )
@@ -657,12 +646,8 @@ def run_simulation():  # simulation start
                 input("\nPress Enter to return...")
                 continue
 
-            if cycle_selection is not None and not cycle_in_progress:
-                cycle_in_progress = True
-                try:
-                    full_cycle_data = advance_cycle(cycle_selection)
-                finally:
-                    cycle_in_progress = False
+            if cycle_selection is not None:
+                full_cycle_data = advance_cycle(cycle_selection)
 
             if full_cycle_data:
                 resources = full_cycle_data["resources"]
@@ -746,7 +731,6 @@ def run_simulation():  # simulation start
                     hub_info,
                     resources,
                     infrastructure,
-                    show_operator_interface=show_operator_interface,
                     auto_mode=auto_mode,
                     auto_cycle_mode=auto_cycle_mode,
                 )
@@ -760,7 +744,6 @@ def run_simulation():  # simulation start
             hub_info,
             resources,
             infrastructure=None,
-            show_operator_interface=show_operator_interface,
             auto_mode=auto_mode,
             auto_cycle_mode=auto_cycle_mode,
         )
