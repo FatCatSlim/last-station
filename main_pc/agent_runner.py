@@ -456,12 +456,12 @@ def run_adviser(adviser_input):
             {"role": "user", "content": json.dumps(adviser_input)},
         ],
     }
-
-    response = requests.post(OLLAMA_CHAT_URL, json=request_data, timeout=55)
-
-    response.raise_for_status()
-
-    return response.json()
+    try:
+        response = requests.post(OLLAMA_CHAT_URL, json=request_data, timeout=55)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return None
 
 
 def get_trend(recent_cycles, resource):
@@ -697,7 +697,11 @@ if __name__ == "__main__":
 
         adviser_output = run_adviser(adviser_input)
 
-        advice = adviser_output["message"]["content"]
+        advice = (
+            adviser_output["message"]["content"]
+            if adviser_output
+            else "Adviser not available."
+        )
 
         print("\nADVISER:")
         print(advice)
