@@ -30,7 +30,8 @@ from tools import (
 )
 
 # Seconds interval between automatic cycles
-AUTO_CYCLE_INTERVAL = 20  # seconds between cycles
+AUTO_CYCLE_INTERVAL = 10  # seconds between cycles
+AUTO_REPORT_DURATION = 3  # how long the report is displayed
 
 # Power thresholds warning levels
 MAINTENANCE_POWER_THRESHOLD = 60  # maintenance is required
@@ -305,6 +306,7 @@ def run_simulation():  # simulation start
             if auto_mode:
                 choice = None
                 while choice is None:
+                    # Check for user input or auto cycle trigger
                     if msvcrt.kbhit():  # Check whether a key was pressed
                         key = msvcrt.getwch().lower()
                         if key == "t":
@@ -578,8 +580,12 @@ def run_simulation():  # simulation start
                     print("║" + adviser_title.center(68) + "║")
                     print("╠" + "─" * 68 + "╣")
                     print("║" + " Adviser Response: ".ljust(68) + "║")
+
                     adviser_response = run_adviser(adviser_input)
-                    adviser_text = adviser_response["message"]["content"]
+                    if adviser_response is None:
+                        adviser_text = "Adviser unavailable. Check Ollama connection."
+                    else:
+                        adviser_text = adviser_response["message"]["content"]
                     wrapped_text = textwrap.wrap(adviser_text, width=66)
 
                     for line in wrapped_text:
@@ -715,11 +721,25 @@ def run_simulation():  # simulation start
 
                 save_resources(resources)
                 add_cycle_report(full_cycle_data)
-                if choice == "__auto_cycle__":
-                    next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
+                print("Cycle advanced.")
 
-                print("\nCycle advanced.")
-                if choice != "__auto_cycle__":
+                if choice == "__auto_cycle__":
+                    cycle_finished = time.monotonic()
+                    next_auto_cycle = cycle_finished + AUTO_CYCLE_INTERVAL
+                    report_deadline = cycle_finished + AUTO_REPORT_DURATION
+                    print("Press [T] to disable auto mode")
+                    while time.monotonic() < report_deadline:
+                        if msvcrt.kbhit():
+                            key = msvcrt.getwch().lower()
+                            if key == "t":
+                                print("\nAuto mode disabled.")
+                                auto_mode = False
+                                auto_cycle_mode = None
+                                next_auto_cycle = None
+                                input("\nPress Enter to continue...")
+                                break
+                        time.sleep(0.1)  # Small delay
+                else:
                     input("\nPress Enter to return...")
             else:
                 print("Hub connection lost. Cycle not advanced.")
