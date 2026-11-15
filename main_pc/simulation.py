@@ -1,5 +1,6 @@
 import time
 import os
+import math
 
 if os.name == "nt":
     import msvcrt  # Windows module for keyboard input detection
@@ -305,7 +306,21 @@ def run_simulation():  # simulation start
             # Get user choice based on mode (auto or manual)
             if auto_mode:
                 choice = None
+                last_time_displayed = None
                 while choice is None:
+                    if next_auto_cycle is not None:
+                        time_remaining = math.ceil(
+                            max(0, next_auto_cycle - time.monotonic())
+                        )
+                        if last_time_displayed != time_remaining:
+                            last_time_displayed = time_remaining
+                            print(
+                                f"\rNext auto cycle in: {time_remaining} seconds".ljust(
+                                    50
+                                ),
+                                end="",
+                                flush=True,
+                            )
                     # Check for user input or auto cycle trigger
                     if msvcrt.kbhit():  # Check whether a key was pressed
                         key = msvcrt.getwch().lower()
@@ -319,6 +334,7 @@ def run_simulation():  # simulation start
                     ):
                         choice = "__auto_cycle__"
                     time.sleep(0.1)  # Small delay to prevent high CPU usage
+                print()  # Move to the next line after auto cycle countdown
             else:
                 choice = input("Select an option: ").strip().lower()
 
@@ -725,7 +741,6 @@ def run_simulation():  # simulation start
 
                 if choice == "__auto_cycle__":
                     cycle_finished = time.monotonic()
-                    next_auto_cycle = cycle_finished + AUTO_CYCLE_INTERVAL
                     report_deadline = cycle_finished + AUTO_REPORT_DURATION
                     print("Press [T] to disable auto mode")
                     while time.monotonic() < report_deadline:
@@ -739,6 +754,8 @@ def run_simulation():  # simulation start
                                 input("\nPress Enter to continue...")
                                 break
                         time.sleep(0.1)  # Small delay
+                    if auto_mode:
+                        next_auto_cycle = time.monotonic() + AUTO_CYCLE_INTERVAL
                 else:
                     input("\nPress Enter to return...")
             else:
