@@ -94,6 +94,17 @@ def request_generator_repair():
         return None
 
 
+def request_pump_repair():
+    try:
+        response = requests.post(HUB_URL + "/engineering/repair-pump", timeout=2)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.RequestException:
+        return None
+
+
 def advance_cycle(action):
     try:
         response = requests.post(

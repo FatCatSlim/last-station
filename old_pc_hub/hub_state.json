@@ -14,7 +14,8 @@
     "engineering": {
         "status": "available",
         "cycle_remaining": 0,
-        "repair_target": 0
+        "repair_target": 0,
+        "repair_system": null
     },
     "infrastructure": {
         "farm": {
@@ -23,7 +24,8 @@
         },
         "water_system": {
             "source": "available",
-            "pump": "online"
+            "pump": "online",
+            "pump_condition": 100.0
         },
         "power_system": {
             "wind_generators": "online",
