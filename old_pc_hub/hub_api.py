@@ -17,6 +17,9 @@ GENERATOR_DEGRADATION_MIN = 0.1
 # Water and Food Storage Settings
 WATER_TANK_CAPACITY = 100
 FOOD_STORAGE_CAPACITY = 100
+# Water System Degradation Settings
+PUMP_DEGRADATION_MAX = 0.5
+PUMP_DEGRADATION_MIN = 0.1
 
 # Consumption and Production Rates
 NORMAL_FOOD_CONSUMPTION = 2.0
@@ -41,6 +44,13 @@ GENERATOR_REPAIR_RULES = {
     "moderate": {"min_power": 11, "cycles": 3, "scrap": 6},
     "major": {"min_power": 1, "cycles": 4, "scrap": 8},
     "offline": {"min_power": 0, "cycles": 6, "scrap": 10},
+}
+
+# Pump Repair Settings
+PUMP_REPAIR_RULES = {
+    "minor": {"min_condition": 50.1, "cycles": 2, "scrap": 4},
+    "major": {"min_condition": 0.1, "cycles": 3, "scrap": 6},
+    "failed": {"min_condition": 0, "cycles": 4, "scrap": 8},
 }
 
 
@@ -98,6 +108,7 @@ class ExpeditionDispatchResponse(BaseModel):
 class EngineeringResponse(BaseModel):
     detail: str
     status: Literal["available", "repairing"]
+    repair_system: Literal["generator", "pump"] | None
     cycle_remaining: int
     repair_target: float
     scrap: int
@@ -113,6 +124,7 @@ class FarmInfrastructureResponse(BaseModel):
 class WaterSystemResponse(BaseModel):
     source: Literal["available", "unavailable"]
     pump: Literal["online", "offline"]
+    pump_condition: float
     operational: bool
 
 
@@ -134,6 +146,7 @@ class CycleAdvanceResponse(BaseModel):
     supply: ResourceChange
     consumption: ResourceChange
     power_degradation: float
+    pump_degradation: float
     expedition: ExpeditionDispatchResponse
     expedition_reward: ResourceChange
     infrastructure: InfrastructureResponse
@@ -171,10 +184,17 @@ def power_system_operational():
 
 
 def water_system_operational():
+    pump_under_repair = (
+        hub_state["engineering"]["status"] == "repairing"
+        and hub_state["engineering"]["repair_system"] == "pump"
+    )
+
     if (
         hub_state["infrastructure"]["water_system"]["source"] == "available"
         and hub_state["infrastructure"]["water_system"]["pump"] == "online"
+        and hub_state["infrastructure"]["water_system"]["pump_condition"] > 0
         and get_current_power() >= MIN_INFRASTRUCTURE_POWER
+        and not pump_under_repair
     ):
         return True
     return False
@@ -200,6 +220,16 @@ def get_production_efficiency():
         return 0.0
 
 
+def get_pump_efficiency():
+    pump_condition = hub_state["infrastructure"]["water_system"]["pump_condition"]
+    if pump_condition > 50:
+        return 1.0
+    elif pump_condition > 0:
+        return 0.8
+    else:
+        return 0.0
+
+
 def get_generator_degradation():
     degradation = round(
         random.uniform(GENERATOR_DEGRADATION_MIN, GENERATOR_DEGRADATION_MAX), 1
@@ -212,18 +242,42 @@ def get_generator_degradation():
     return degradation
 
 
+def get_pump_degradation():
+    original_condition = hub_state["infrastructure"]["water_system"]["pump_condition"]
+    degradation = round(random.uniform(PUMP_DEGRADATION_MIN, PUMP_DEGRADATION_MAX), 1)
+    pump_condition = round(
+        hub_state["infrastructure"]["water_system"]["pump_condition"] - degradation, 1
+    )
+    if pump_condition > 0:
+        hub_state["infrastructure"]["water_system"]["pump_condition"] = pump_condition
+    else:
+        hub_state["infrastructure"]["water_system"]["pump_condition"] = 0
+    return round(
+        original_condition
+        - hub_state["infrastructure"]["water_system"]["pump_condition"],
+        1,
+    )
+
+
 # generator degradation and repair
 def update_repair_status():
     if hub_state["engineering"]["status"] == "repairing":
         hub_state["engineering"]["cycle_remaining"] -= 1
 
         if hub_state["engineering"]["cycle_remaining"] <= 0:
-            hub_state["infrastructure"]["power_system"]["output"] = hub_state[
-                "engineering"
-            ]["repair_target"]
+            if hub_state["engineering"]["repair_system"] == "generator":
+                hub_state["infrastructure"]["power_system"]["output"] = hub_state[
+                    "engineering"
+                ]["repair_target"]
+            elif hub_state["engineering"]["repair_system"] == "pump":
+                hub_state["infrastructure"]["water_system"]["pump_condition"] = (
+                    hub_state["engineering"]["repair_target"]
+                )
+            # Reset the repair system after completing the repair
             hub_state["engineering"]["status"] = "available"
             hub_state["engineering"]["cycle_remaining"] = 0
             hub_state["engineering"]["repair_target"] = 0
+            hub_state["engineering"]["repair_system"] = None
 
     return {
         "status": hub_state["engineering"]["status"],
@@ -260,6 +314,36 @@ def start_generator_repair():
     hub_state["engineering"]["status"] = "repairing"
     hub_state["engineering"]["cycle_remaining"] = repair_cycles
     hub_state["engineering"]["repair_target"] = repair_target
+    hub_state["engineering"]["repair_system"] = "generator"
+    return "Repair started"
+
+
+def start_pump_repair():
+    if hub_state["engineering"]["status"] == "repairing":
+        return "Repair already in progress"
+    pump_condition = hub_state["infrastructure"]["water_system"]["pump_condition"]
+    scrap = hub_state["resources"]["scrap"]
+    if pump_condition >= 100:
+        return "Pump does not need repair"
+
+    if pump_condition >= PUMP_REPAIR_RULES["minor"]["min_condition"]:
+        repair_cycles = PUMP_REPAIR_RULES["minor"]["cycles"]
+        required_scrap = PUMP_REPAIR_RULES["minor"]["scrap"]
+    elif pump_condition >= PUMP_REPAIR_RULES["major"]["min_condition"]:
+        repair_cycles = PUMP_REPAIR_RULES["major"]["cycles"]
+        required_scrap = PUMP_REPAIR_RULES["major"]["scrap"]
+    else:
+        repair_cycles = PUMP_REPAIR_RULES["failed"]["cycles"]
+        required_scrap = PUMP_REPAIR_RULES["failed"]["scrap"]
+
+    if scrap < required_scrap:
+        return "Not enough scrap to start repair"
+    hub_state["resources"]["scrap"] -= required_scrap
+    repair_target = 100
+    hub_state["engineering"]["status"] = "repairing"
+    hub_state["engineering"]["cycle_remaining"] = repair_cycles
+    hub_state["engineering"]["repair_target"] = repair_target
+    hub_state["engineering"]["repair_system"] = "pump"
     return "Repair started"
 
 
@@ -309,6 +393,7 @@ def get_infrastructure():
         "water_system": {
             "source": infrastructure["water_system"]["source"],
             "pump": infrastructure["water_system"]["pump"],
+            "pump_condition": infrastructure["water_system"]["pump_condition"],
             "operational": water_system_operational(),
         },
         "power_system": {
@@ -326,6 +411,7 @@ def get_engineering_status():
     return {
         "detail": "Engineering status",
         "status": hub_state["engineering"]["status"],
+        "repair_system": hub_state["engineering"]["repair_system"],
         "cycle_remaining": hub_state["engineering"]["cycle_remaining"],
         "repair_target": hub_state["engineering"]["repair_target"],
         "scrap": hub_state["resources"]["scrap"],
@@ -358,6 +444,24 @@ def repair_generator():
         "status": hub_state["engineering"]["status"],
         "cycle_remaining": hub_state["engineering"]["cycle_remaining"],
         "repair_target": hub_state["engineering"]["repair_target"],
+        "repair_system": hub_state["engineering"]["repair_system"],
+        "scrap": hub_state["resources"]["scrap"],
+    }
+
+
+@app.post(
+    "/engineering/repair-pump", response_model=EngineeringResponse
+)  # post endpoint for initiating pump repair
+def repair_pump():
+    repair_result = start_pump_repair()
+    if repair_result == "Repair started":
+        save_hub_state(hub_state)
+    return {
+        "detail": repair_result,
+        "status": hub_state["engineering"]["status"],
+        "cycle_remaining": hub_state["engineering"]["cycle_remaining"],
+        "repair_target": hub_state["engineering"]["repair_target"],
+        "repair_system": hub_state["engineering"]["repair_system"],
         "scrap": hub_state["resources"]["scrap"],
     }
 
@@ -369,19 +473,41 @@ def advance_cycle(request: CycleAdvanceRequest):
     # simulate resource changes for the next cycle
     supply = {"food": 0.0, "water": 0.0, "power": 0, "scrap": 0}
     consumption = get_consumption(request.action)
-    was_repairing = hub_state["engineering"]["status"] == "repairing"
-    repair_status = update_repair_status()
+    # Check equipment repair status at the start of the cycle
+    pump_under_repair = (
+        hub_state["engineering"]["status"] == "repairing"
+        and hub_state["engineering"]["repair_system"] == "pump"
+    )
+    generator_under_repair = (
+        hub_state["engineering"]["status"] == "repairing"
+        and hub_state["engineering"]["repair_system"] == "generator"
+    )
+    update_repair_status()
     power_degradation = 0.0
-    if repair_status["status"] == "available" and not was_repairing:
+    pump_degradation = 0.0
+    if not generator_under_repair:
         power_degradation = get_generator_degradation()
     hub_resources["power"] = get_current_power()
-    if water_system_operational():
+    # Bottleneck model: whichever system has lower efficiency limits production.
+    if water_system_operational() and not pump_under_repair:
+        pump_degradation = get_pump_degradation()
         supply["water"] = round(
-            max(0, NORMAL_WATER_PRODUCTION * get_production_efficiency()), 2
+            max(
+                0,
+                NORMAL_WATER_PRODUCTION
+                * min(get_pump_efficiency(), get_production_efficiency()),
+            ),
+            2,
         )
-    if farm_system_operational():
+
+    if farm_system_operational() and not pump_under_repair:
         supply["food"] = round(
-            max(0, NORMAL_FOOD_PRODUCTION * get_production_efficiency()), 2
+            max(
+                0,
+                NORMAL_FOOD_PRODUCTION
+                * min(get_pump_efficiency(), get_production_efficiency()),
+            ),
+            2,
         )
 
     # rewards we get
@@ -444,6 +570,7 @@ def advance_cycle(request: CycleAdvanceRequest):
         "supply": supply,
         "consumption": consumption,
         "power_degradation": power_degradation,
+        "pump_degradation": pump_degradation,
         "expedition": {
             "status": expedition["status"],
             "location": expedition["location"],

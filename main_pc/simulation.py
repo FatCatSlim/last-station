@@ -28,6 +28,7 @@ from tools import (
     get_infrastructure,
     get_resources,
     request_generator_repair,
+    request_pump_repair,
 )
 
 # Seconds interval between automatic cycles
@@ -48,9 +49,13 @@ def get_station_mode(hub_status):
         return "SURVIVAL"
 
 
-def get_resource_warning(resources):
+# power warnings and pump condition warnings
+def get_resource_warning(resources, infrastructure=None):
     warnings = []
     power = resources.get("power")
+    pump_condition = None
+    if infrastructure and "water_system" in infrastructure:
+        pump_condition = infrastructure["water_system"].get("pump_condition")
     if power <= MAINTENANCE_POWER_THRESHOLD:
         warnings.append("Service/maintenance required.")
     if power <= DEGRADED_POWER_THRESHOLD:
@@ -61,11 +66,21 @@ def get_resource_warning(resources):
         warnings.append("Power low. STANDBY mode activated.")
     if power == 0:
         warnings.append("Total power loss!")
+    if pump_condition is not None:
+        if pump_condition == 0:
+            warnings.append("Pump failure!")
+        elif pump_condition <= 50:
+            warnings.append("Reduced pump efficiency.")
     return warnings
 
 
-def get_station_condition(warnings):
+def get_station_condition(warnings, infrastructure=None):
     warning_count = len(warnings)
+    if (
+        infrastructure
+        and infrastructure.get("water_system", {}).get("pump_condition") == 0
+    ):
+        return "CRITICAL"
     if warning_count == 0:
         return "STABLE"
     elif warning_count <= 2:
@@ -95,14 +110,15 @@ def print_simulation_status(
     station_mode,
     hub_info,
     resources,
+    engineering,
     infrastructure,
     show_operator=True,
     auto_mode=False,
     auto_cycle_mode=None,
 ):
     if hub_status["status"] == "online":
-        warnings = get_resource_warning(resources)
-        station_condition = get_station_condition(warnings)
+        warnings = get_resource_warning(resources, infrastructure)
+        station_condition = get_station_condition(warnings, infrastructure)
         station_message = get_station_message(station_condition)
         title = (
             f"====== {hub_info['hub_name']} {hub_info['hub_version']} "
@@ -142,7 +158,8 @@ def print_simulation_status(
         water_line = (
             f"Water: {water_status:<7}  |  "
             f"Source: {infrastructure['water_system']['source'].upper()}  |  "
-            f"Pump: {infrastructure['water_system']['pump'].upper()}"
+            f"Pump: {infrastructure['water_system']['pump'].upper()} "
+            f"[{infrastructure['water_system']['pump_condition']:.1f}%]"
         )
         farm_status = "ONLINE" if infrastructure["farm"]["operational"] else "OFFLINE"
         farm_line = (
@@ -150,6 +167,21 @@ def print_simulation_status(
             f"Light: {infrastructure['farm']['lights'].upper()}"
         )
         warnings_title = " WARNINGS "
+
+        # Add and set engineering status line
+        if engineering is None:
+            engineering_status_line = "Engineering: N/A"
+        elif engineering["status"] == "repairing":
+            engineering_repair_system: str = engineering["repair_system"].upper()
+            engineering_status_line = (
+                f"Engineering: BUSY | "
+                f"Repair System: {engineering_repair_system} | "
+                f"Cycle: {engineering['cycle_remaining']}"
+            )
+        else:
+            engineering_status: str = engineering["status"].upper()
+            engineering_status_line = f"Engineering: {engineering_status}"
+
         operator_title = " OPERATOR INTERFACE "
         menu_line1 = f"{'[1] Advance Normal Cycle':<25}  [2] Advance Ration Cycle"
         menu_line2 = f"{'[E] Expedition':<25}  [R] Engineering / Repair"
@@ -180,6 +212,8 @@ def print_simulation_status(
         print("║" + f" {power_line.ljust(67)}" + "║")
         print("║" + f" {water_line.ljust(67)}" + "║")
         print("║" + f" {farm_line.ljust(67)}" + "║")
+        print("║" + " " * 68 + "║")
+        print("║" + f" {engineering_status_line.ljust(67)}" + "║")
         print("║" + " " * 68 + "║")
         print("╠" + warnings_title.center(68, "═") + "╣")
         print("║" + " " * 68 + "║")
@@ -218,7 +252,7 @@ def print_simulation_status(
         for resource, amount in resources.items():
             if resource != "cycle":
                 print(f"  {resource.capitalize()}: {amount}")
-        warnings = get_resource_warning(resources)
+        warnings = get_resource_warning(resources, infrastructure)
         if warnings:
             print("\nWARNING:")
             for warning in warnings:
@@ -292,12 +326,29 @@ def run_simulation():  # simulation start
     if hub_status["status"] == "online":
         while True:
             clear_screen()
+            # get engineering status and show in on dashboard
+            engineering = get_engineering()
             infrastructure = get_infrastructure()
+            if infrastructure is None or engineering is None:
+                hub_status["status"] = "offline"
+                station_mode = get_station_mode(hub_status)
+                print_simulation_status(
+                    hub_status,
+                    station_mode,
+                    hub_info,
+                    resources,
+                    engineering,
+                    infrastructure,
+                    auto_mode=auto_mode,
+                    auto_cycle_mode=auto_cycle_mode,
+                )
+                break
             print_simulation_status(
                 hub_status,
                 station_mode,
                 hub_info,
                 resources,
+                engineering,
                 infrastructure,
                 auto_mode=auto_mode,
                 auto_cycle_mode=auto_cycle_mode,
@@ -445,10 +496,13 @@ def run_simulation():  # simulation start
                     if engineering["status"] == "available":
                         repair_prompt = "Engineering team available."
                         repair_menu = (
-                            f"{'[Y] Request Generator Repair':<25}  [N] Return"
+                            f"{'[G] Repair Generator  [P] Repair Pump':<25}  [N] Return"
                         )
                     else:
-                        repair_prompt = "Engineering team busy with repairs."
+                        repair_prompt = (
+                            f"Engineers are currently busy. "
+                            f"Repairing {engineering['repair_system'].upper()} system."
+                        )
                         repair_menu = "[ENTER] Return"
 
                     engineering_title = " Engineering / Repair "
@@ -483,33 +537,34 @@ def run_simulation():  # simulation start
                     if engineering["status"] == "available":
                         repair_choice = input("Select an option: ").strip().lower()
 
-                        if repair_choice == "y":
+                        if repair_choice == "g":
                             repair_response = request_generator_repair()
-
-                            if repair_response is None:
-                                print("Failed to request generator repair.")
-                                input("\nPress Enter to return...")
-                                break
-
-                            # Refresh resources
-                            updated_resources = get_resources()
-
-                            if updated_resources is not None:
-                                resources = updated_resources
-                            # screen redraws with the updated resources.
-                            continue
-
+                        elif repair_choice == "p":
+                            repair_response = request_pump_repair()
                         elif repair_choice == "n":
                             break
-
                         else:
-                            print("Invalid option, please select 'y' or 'n'.")
+                            print("Invalid option, please select 'g', 'p', or 'n'.")
                             input("\nPress Enter to try again...")
+                            continue
+                        if repair_response is None:
+                            print("Repair request failed.")
+                            input("\nPress Enter to return...")
+                            break
 
+                        if repair_response["detail"] != "Repair started":
+                            print(repair_response["detail"])
+                            input("\nPress Enter to continue...")
+                        # Refresh resources
+                        updated_resources = get_resources()
+
+                        if updated_resources is not None:
+                            resources = updated_resources
+                        # screen redraws with the updated resources.
+                        continue
                     else:
                         input("\nPress Enter to return...")
                         break
-
                 continue
 
             # Sector map
@@ -580,6 +635,7 @@ def run_simulation():  # simulation start
                     station_mode,
                     hub_info,
                     resources,
+                    engineering,
                     infrastructure,
                     show_operator=False,
                     auto_mode=auto_mode,
@@ -649,6 +705,7 @@ def run_simulation():  # simulation start
                                 station_mode,
                                 hub_info,
                                 resources,
+                                engineering,
                                 infrastructure,
                                 auto_mode=auto_mode,
                                 auto_cycle_mode=auto_cycle_mode,
@@ -674,6 +731,7 @@ def run_simulation():  # simulation start
             if full_cycle_data:
                 resources = full_cycle_data["resources"]
                 power_degradation = full_cycle_data["power_degradation"]
+                pump_degradation = full_cycle_data["pump_degradation"]
                 clear_screen()
 
                 cycles_title = " Cycle Report "
@@ -693,6 +751,11 @@ def run_simulation():  # simulation start
                     if power_degradation > 0
                     else ""
                 )
+                pump_line = (
+                    f"Pump Degradation: -{pump_degradation:g}"
+                    if pump_degradation > 0
+                    else ""
+                )
                 rewards_line = " | ".join(
                     f"{resource.capitalize()}: +{amount:g}"
                     for resource, amount in full_cycle_data["expedition_reward"].items()
@@ -709,6 +772,8 @@ def run_simulation():  # simulation start
                     print("║" + f" Supplied: {supply_line}".ljust(68) + "║")
                 if power_line:
                     print("║" + f" {power_line}".ljust(68) + "║")
+                if pump_line:
+                    print("║" + f" {pump_line}".ljust(68) + "║")
                 if rewards_line:
                     print("║" + f" Expedition Rewards: {rewards_line}".ljust(68) + "║")
                 print("╚" + "═" * 68 + "╝")
@@ -729,9 +794,11 @@ def run_simulation():  # simulation start
                             f"Cycle Remaining: {expedition_data['cycle_remaining']}."
                         )
 
-                # Save warnings and station condition to the full cycle data
-                warnings = get_resource_warning(resources)
-                station_condition = get_station_condition(warnings)
+                # get updated infrastructure data
+                infrastructure = full_cycle_data["infrastructure"]
+                # Calculate warnings and save station condition
+                warnings = get_resource_warning(resources, infrastructure)
+                station_condition = get_station_condition(warnings, infrastructure)
                 full_cycle_data["warnings"] = warnings
                 full_cycle_data["station_condition"] = station_condition
 
@@ -759,6 +826,7 @@ def run_simulation():  # simulation start
                 else:
                     input("\nPress Enter to return...")
             else:
+                clear_screen()
                 print("Hub connection lost. Cycle not advanced.")
                 hub_status["status"] = "offline"
                 station_mode = get_station_mode(hub_status)
@@ -767,6 +835,7 @@ def run_simulation():  # simulation start
                     station_mode,
                     hub_info,
                     resources,
+                    engineering,
                     infrastructure,
                     auto_mode=auto_mode,
                     auto_cycle_mode=auto_cycle_mode,
@@ -780,6 +849,7 @@ def run_simulation():  # simulation start
             station_mode,
             hub_info,
             resources,
+            engineering=None,
             infrastructure=None,
             auto_mode=auto_mode,
             auto_cycle_mode=auto_cycle_mode,
