@@ -20,6 +20,10 @@ The developer uses VS Code for implementation and ChatGPT for technical mentorin
 - Distinguish implemented, tested, planned, and speculative behavior.
 - Identify bugs using actual code and evidence, not guesses.
 - Challenge weak suggestions, including suggestions from other AI assistants.
+- Follow source priority: latest code and tests → latest Progress Handoff → Master Reference → architecture documents. Never treat historical milestones as current facts.
+- Work within the active milestone. Do not implement future roadmap features or refactor unrelated components without explicit approval.
+- Review new behavior and relevant existing paths. Report actual defects separately from optional improvements and speculative risks.
+
 
 ## Architecture
 
